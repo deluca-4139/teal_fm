@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Personal
+env
+share/
+bin/
+discord.py/
+*.cfg
+*.spotdl-cache
