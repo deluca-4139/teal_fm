@@ -133,5 +133,7 @@ env
 share/
 bin/
 discord.py/
+playlists/
+main.py
 *.cfg
 *.spotdl-cache

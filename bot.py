@@ -6,6 +6,7 @@ import spotipy
 from spotipy import SpotifyClientCredentials
 
 import asyncio, subprocess, os
+from async_timeout import timeout
 
 env = []
 with open("env", "r") as infile:
@@ -15,10 +16,70 @@ with open("env", "r") as infile:
 client_creds = SpotifyClientCredentials(client_id=env[1], client_secret=env[2])
 spotify_client = spotipy.Spotify(client_credentials_manager=client_creds)
 
+######################################################
+
+class Player:
+    # This class has been taken and modified from the Eviee example at
+    # https://gist.github.com/EvieePy/ab667b74e9758433b3eb806c53a19f34
+    def __init__(self, ctx, bot):
+        # Note that ctx in this instance is likely a discord.Interaction,
+        # since this bot is written with the updated slash commands in mind.
+        self.bot = bot
+        self.guild = ctx.guild
+        self.channel = ctx.channel
+
+        self.queue = asyncio.Queue()
+        self.next = asyncio.Event()
+
+        self.now_playing = None
+        self.volume = 0.5
+        self.current = None
+
+        # This will likely break if you switch to 3.10 in the future
+        bot.loop.create_task(self.player_loop())
+
+    async def player_loop(self):
+        await self.bot.wait_until_ready()
+
+        while not self.bot.is_closed():
+            self.next.clear()
+
+            try:
+                async with timeout(300):
+                    source = await self.queue.get()
+            except asyncio.TimeoutError:
+                # TODO: implement timeout disconnect
+                pass
+
+            source.volume = self.volume
+            self.current = source
+
+            self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
+            self.now_playing = await self.channel.send("TODO: add now playing message")
+            await self.next.wait()
+
+            source.cleanup()
+            self.current = None
+            try:
+                await self.now_playing.delete()
+            except discord.HTTPException:
+                pass
+
+
 class VoiceCog(commands.GroupCog, name="voice"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self.players = {}
         super().__init__()
+
+    def get_player(self, ctx):
+        try:
+            player = self.players[ctx.guild.id]
+        except KeyError:
+            player = Player(ctx, self.bot)
+            self.players[ctx.guild.id] = player
+
+        return player
 
     @app_commands.command(name="join")
     async def join(self, interaction: discord.Interaction, channel: discord.VoiceChannel=None):
@@ -36,15 +97,31 @@ class VoiceCog(commands.GroupCog, name="voice"):
                 return
             else:
                 await interaction.guild.voice_client.move_to(channel)
-                return await interaction.response.send_message(f"Moved to channel `{channel}`!")
+                return await interaction.response.send_message(f"Moved to channel {channel}!")
         else:
             await channel.connect()
-            return await interaction.response.send_message(f"Joined channel `{channel!}`!")
+            return await interaction.response.send_message(f"Joined channel {channel}!")
 
     @app_commands.command(name="leave")
     async def leave(self, interaction: discord.Interaction):
         await interaction.guild.voice_client.disconnect()
         return await interaction.response.send_message("Left voice!")
+
+    @app_commands.command(name="play")
+    async def play(self, interaction: discord.Interaction):
+        if not interaction.guild.voice_client:
+            # TODO: maybe just have the bot join the voice channel?
+            return await interaction.response.send_message("I am not currently connected to a voice channel!")
+
+        try:
+            player = self.get_player(interaction)
+
+            source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio("PUT SONG PATH HERE"))
+
+            await player.queue.put(source)
+            return await interaction.response.send_message("Attempting to play...")
+        except Exception as e:
+            await interaction.channel.send(f"Something went wrong. Error: `{e}`")
 
 class PlaylistCog(commands.GroupCog, name="playlist"):
     def __init__(self, bot: commands.Bot) -> None:
