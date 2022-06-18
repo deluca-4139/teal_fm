@@ -15,7 +15,38 @@ with open("env", "r") as infile:
 client_creds = SpotifyClientCredentials(client_id=env[1], client_secret=env[2])
 spotify_client = spotipy.Spotify(client_credentials_manager=client_creds)
 
-class MyCog(commands.GroupCog, name="ongaku"):
+class VoiceCog(commands.GroupCog, name="voice"):
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+        super().__init__()
+
+    @app_commands.command(name="join")
+    async def join(self, interaction: discord.Interaction, channel: discord.VoiceChannel=None):
+        if not channel:
+            if interaction.user.voice.channel:
+                try:
+                    channel = interaction.user.voice.channel
+                except AttributeError:
+                    return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.")
+            else:
+                return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.")
+
+        if interaction.guild.voice_client in self.bot.voice_clients:
+            if interaction.guild.voice_client.channel == channel:
+                return
+            else:
+                await interaction.guild.voice_client.move_to(channel)
+                return await interaction.response.send_message(f"Moved to channel `{channel}`!")
+        else:
+            await channel.connect()
+            return await interaction.response.send_message(f"Joined channel `{channel!}`!")
+
+    @app_commands.command(name="leave")
+    async def leave(self, interaction: discord.Interaction):
+        await interaction.guild.voice_client.disconnect()
+        return await interaction.response.send_message("Left voice!")
+
+class PlaylistCog(commands.GroupCog, name="playlist"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         super().__init__()
@@ -30,13 +61,8 @@ class MyCog(commands.GroupCog, name="ongaku"):
             await message.send("Commands have been synced!")
 
     @app_commands.command(name="download")
-    async def parrot(self, interaction: discord.Interaction, url: str) -> None:
-        await interaction.response.send_message(f"Link received. Downloading...")
-        return_val = subprocess.call(["spotdl", url])
-        await interaction.response.send_message(f"I've completed the download. Return code: {return_val}")
-
-    @app_commands.command(name="info")
-    async def info(self, interaction: discord.Interaction, url: str) -> None:
+    async def download(self, interaction: discord.Interaction, url: str) -> None:
+        # TODO: parse URL to make sure it is a valid spotify playlist
         await interaction.response.send_message(f"Link received. Parsing playlist data...")
         try:
             playlist_data = spotify_client.playlist_tracks(url)
@@ -79,7 +105,8 @@ class MyCog(commands.GroupCog, name="ongaku"):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(MyCog(bot), guild=discord.Object(id=514188804433641472))
+    await bot.add_cog(PlaylistCog(bot), guild=discord.Object(id=514188804433641472))
+    await bot.add_cog(VoiceCog(bot), guild=discord.Object(id=514188804433641472))
 
 ######################################################
 
