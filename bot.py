@@ -5,7 +5,7 @@ from discord.ext import commands
 import spotipy
 from spotipy import SpotifyClientCredentials
 
-import asyncio, subprocess, os
+import asyncio, subprocess, os, random
 from async_timeout import timeout
 
 env = []
@@ -34,6 +34,7 @@ class Player:
         self.now_playing = None
         self.volume = 0.5
         self.current = None
+        self.song_list = []
 
         # This will likely break if you switch to 3.10 in the future
         bot.loop.create_task(self.player_loop())
@@ -55,8 +56,10 @@ class Player:
             self.current = source
 
             self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
-            self.now_playing = await self.channel.send("TODO: add now playing message")
+            self.now_playing = await self.channel.send(f"**~NOW PLAYING~** \n \n {self.song_list[0]}")
             await self.next.wait()
+
+            self.song_list.pop(0)
 
             source.cleanup()
             self.current = None
@@ -104,11 +107,12 @@ class VoiceCog(commands.GroupCog, name="voice"):
 
     @app_commands.command(name="leave")
     async def leave(self, interaction: discord.Interaction):
+        # TODO: cleanup before leaving if bot is currently playing
         await interaction.guild.voice_client.disconnect()
         return await interaction.response.send_message("Left voice!")
 
     @app_commands.command(name="play")
-    async def play(self, interaction: discord.Interaction):
+    async def play(self, interaction: discord.Interaction, target: str, shuffle: bool):
         if not interaction.guild.voice_client:
             # TODO: maybe just have the bot join the voice channel?
             return await interaction.response.send_message("I am not currently connected to a voice channel!")
@@ -116,9 +120,20 @@ class VoiceCog(commands.GroupCog, name="voice"):
         try:
             player = self.get_player(interaction)
 
-            source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio("PUT SONG PATH HERE"))
+            song_list = os.listdir(f"./playlists/{target}")
+            if shuffle:
+                random.shuffle(song_list)
 
-            await player.queue.put(source)
+            for song in song_list:
+                if song != ".spotdl-cache":
+                    source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(f"./playlists/{target}/{song}"))
+                    await player.queue.put(source)
+
+                    index = len(song) - 1
+                    while song[index] != '.':
+                        index -= 1
+                    player.song_list.append(song[0:index])
+
             return await interaction.response.send_message("Attempting to play...")
         except Exception as e:
             await interaction.channel.send(f"Something went wrong. Error: `{e}`")
@@ -137,10 +152,29 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
         else:
             await message.send("Commands have been synced!")
 
+    @app_commands.command(name="list")
+    async def list(self, interaction: discord.Interaction) -> None:
+        if not os.path.exists("./playlists"):
+            return await interaction.response.send_message("I have no playlists downloaded!")
+
+        if len(os.listdir("./playlists")) == 0:
+            return await interaction.response.send_message("I have no playlists downloaded!")
+
+        output_string = "Downloaded playlists:\n \n"
+
+        for entry in os.listdir("./playlists"):
+            output_string += "~ " + entry + "\n"
+
+        return await interaction.response.send_message(output_string)
+
     @app_commands.command(name="download")
     async def download(self, interaction: discord.Interaction, url: str) -> None:
         # TODO: parse URL to make sure it is a valid spotify playlist
         await interaction.response.send_message(f"Link received. Parsing playlist data...")
+
+        if not os.path.exists("./playlists"):
+            os.mkdir("./playlists")
+
         try:
             playlist_data = spotify_client.playlist_tracks(url)
             playlist_name = spotify_client.playlist(url)["name"]
