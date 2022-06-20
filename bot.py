@@ -56,18 +56,89 @@ class Player:
             self.current = source
 
             self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
-            self.now_playing = await self.channel.send(f"**~NOW PLAYING~** \n \n {self.song_list[0]}")
+            # TODO: add next song in queue to
+            self.now_playing = await self.channel.send(f"**~NOW PLAYING~** \n \n {self.song_list[0]}", view=PlayerButtons(self.bot))
             await self.next.wait()
 
             self.song_list.pop(0)
 
-            source.cleanup()
+            # TODO: fix? maybe unnecessary?
+            try:
+                source.cleanup()
+            except ValueError:
+                pass
             self.current = None
             try:
                 await self.now_playing.delete()
             except discord.HTTPException:
                 pass
 
+class PlayerButtons(discord.ui.View):
+    def __init__(self, bot):
+        self.bot = bot
+        super().__init__()
+
+    def reset_buttons(self):
+        for child in self.children:
+            child.style = discord.ButtonStyle.primary
+
+    def get_current_voice(self, interaction):
+        for voice in self.bot.voice_clients:
+            if voice.guild.id == interaction.guild.id:
+                return voice
+        return None
+
+    @discord.ui.button(label="", emoji="⏸️", style=discord.ButtonStyle.primary)
+    async def pause(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current_voice = self.get_current_voice(interaction)
+
+        if current_voice is not None:
+            if not current_voice.is_paused():
+                self.reset_buttons()
+                current_voice.pause()
+                button.style = discord.ButtonStyle.success
+                return await interaction.response.edit_message(view=self)
+
+        return await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="", emoji="▶️", style=discord.ButtonStyle.success)
+    async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current_voice = self.get_current_voice(interaction)
+
+        if current_voice is not None:
+            if current_voice.is_paused():
+                self.reset_buttons()
+                current_voice.resume()
+                button.style = discord.ButtonStyle.success
+                return await interaction.response.edit_message(view=self)
+
+        return await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="", emoji="⏭️", style=discord.ButtonStyle.primary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current_voice = self.get_current_voice(interaction)
+
+        if current_voice is not None:
+            current_voice.stop()
+
+        return await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="", emoji="⏹️", style=discord.ButtonStyle.primary)
+    async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current_voice = self.get_current_voice(interaction)
+
+        if current_voice is not None:
+            current_voice.stop()
+
+            cog = self.bot.get_cog("voice")
+            while not cog.players[interaction.guild.id].queue.empty():
+                await cog.players[interaction.guild.id].queue.get()
+            del cog.players[interaction.guild.id]
+
+            for child in self.children:
+                child.disabled = True
+
+        return await interaction.response.edit_message(view=self)
 
 class VoiceCog(commands.GroupCog, name="voice"):
     def __init__(self, bot: commands.Bot) -> None:
@@ -89,6 +160,7 @@ class VoiceCog(commands.GroupCog, name="voice"):
         if not channel:
             if interaction.user.voice.channel:
                 try:
+                    # TODO: fix; does not properly return when user is not in voice channel
                     channel = interaction.user.voice.channel
                 except AttributeError:
                     return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.")
@@ -180,6 +252,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
             playlist_name = spotify_client.playlist(url)["name"]
 
             if(os.path.exists(f"./playlists/{playlist_name}")):
+                # TODO: check link for updated playlist info
                 return await interaction.channel.send("I already have a directory with that name! Have you previously downloaded this playlist?")
             os.mkdir(f"./playlists/{playlist_name}")
 
@@ -200,8 +273,8 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
             for index, song in enumerate(songs):
                 await interaction.channel.typing()
-                return_val = subprocess.call(["spotdl", "-o", f"./playlists/{playlist_name}", song[2]])
-                if return_val == 0:
+                return_val = subprocess.call(["spotdl", "-o", f"./playlists/{playlist_name}", song[2]]) # TODO: grab m3u to keep track of playlist data
+                if return_val == 0: # TODO: handle nonzero return codes by keeping track of failed downloads
                     text_array = send_message.content.split("\n")
                     text_array[index + 2] = ":white_check_mark: " + song[0] + " - " + song[1]
                     updated_msg = ""
