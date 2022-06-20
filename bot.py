@@ -27,11 +27,11 @@ class Player:
         self.bot = bot
         self.guild = ctx.guild
         self.channel = ctx.channel
+        self.ctx = ctx
 
         self.queue = asyncio.Queue()
         self.next = asyncio.Event()
 
-        self.now_playing = None
         self.volume = 0.5
         self.current = None
         self.song_list = []
@@ -56,8 +56,7 @@ class Player:
             self.current = source
 
             self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
-            # TODO: add next song in queue to
-            self.now_playing = await self.channel.send(f"**~NOW PLAYING~** \n \n {self.song_list[0]}", view=PlayerButtons(self.bot))
+            await self.ctx.edit_original_message(content=f"**NOW PLAYING:** {self.song_list[0]} \n \n *Up next: {self.song_list[1]}*", view=PlayerButtons(self.bot))
             await self.next.wait()
 
             self.song_list.pop(0)
@@ -68,10 +67,6 @@ class Player:
             except ValueError:
                 pass
             self.current = None
-            try:
-                await self.now_playing.delete()
-            except discord.HTTPException:
-                pass
 
 class PlayerButtons(discord.ui.View):
     def __init__(self, bot):
