@@ -249,7 +249,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
     @app_commands.command(name="download")
     async def download(self, interaction: discord.Interaction, url: str) -> None:
         # TODO: parse URL to make sure it is a valid spotify playlist
-        await interaction.response.send_message(f"Link received. Parsing playlist data...")
+        send_message = await interaction.response.send_message(f"Link received. Parsing playlist data...")
 
         if not os.path.exists("./playlists"):
             os.mkdir("./playlists")
@@ -277,22 +277,22 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
             for song in songs:
                 output_string += ":arrow_down: " + song[0] + " - " + song[1] + "\n"
 
-            send_message = await interaction.channel.send(output_string)
+            await interaction.edit_original_message(content=output_string)
 
             album_image_links = {}
+            text_array = output_string.split("\n")
 
             for index, song in enumerate(songs):
                 await interaction.channel.typing()
                 return_val = subprocess.call(["spotdl", "-o", f"./playlists/{playlist_name}", song[2]]) # TODO: grab m3u to keep track of playlist data
                 if return_val == 0: # TODO: handle nonzero return codes by keeping track of failed downloads
-                    text_array = send_message.content.split("\n")
                     text_array[index + 2] = ":white_check_mark: " + song[0] + " - " + song[1]
                     updated_msg = ""
                     for line in text_array:
                         updated_msg += line + "\n"
 
                     album_image_links[song[1] + " - " + song[0]] = song[3] # Probably would be best to use a UUID for this, but it should work for now
-                    send_message = await send_message.edit(content=updated_msg)
+                    await interaction.edit_original_message(content=updated_msg)
 
             links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
             json.dump(album_image_links, links_file)
