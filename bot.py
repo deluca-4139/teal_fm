@@ -5,7 +5,7 @@ from discord.ext import commands
 import spotipy
 from spotipy import SpotifyClientCredentials
 
-import asyncio, subprocess, os, random
+import asyncio, subprocess, os, random, json
 from async_timeout import timeout
 
 env = []
@@ -36,6 +36,8 @@ class Player:
         self.current = None
         self.song_list = []
 
+        self.album_image_links = {}
+
         # This will likely break if you switch to 3.10 in the future
         bot.loop.create_task(self.player_loop())
 
@@ -55,11 +57,16 @@ class Player:
             source.volume = self.volume
             self.current = source
 
+            playing_embed = discord.Embed(title="Now Playing", description=self.song_list[0])
+            playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
+            playing_embed.set_image(url=self.album_image_links[self.song_list[0]])
+            await self.ctx.edit_original_message(content="", embed=playing_embed, view=PlayerButtons(self.bot))
+
             self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
-            await self.ctx.edit_original_message(content=f"**NOW PLAYING:** {self.song_list[0]} \n \n *Up next: {self.song_list[1]}*", view=PlayerButtons(self.bot))
             await self.next.wait()
 
             self.song_list.pop(0)
+            await self.ctx.edit_original_message(content="", embed=None) # Embed might not update properly if we don't clear it first
 
             # TODO: fix? maybe unnecessary?
             try:
@@ -186,13 +193,14 @@ class VoiceCog(commands.GroupCog, name="voice"):
 
         try:
             player = self.get_player(interaction)
+            player.ctx = interaction
 
             song_list = os.listdir(f"./playlists/{target}")
             if shuffle:
                 random.shuffle(song_list)
 
             for song in song_list:
-                if song != ".spotdl-cache":
+                if song != ".spotdl-cache" and song != "album_image_links.json":
                     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(f"./playlists/{target}/{song}"))
                     await player.queue.put(source)
 
@@ -200,6 +208,10 @@ class VoiceCog(commands.GroupCog, name="voice"):
                     while song[index] != '.':
                         index -= 1
                     player.song_list.append(song[0:index])
+
+            links_file = open(f"./playlists/{target}/album_image_links.json", "r")
+            player.album_image_links = json.load(links_file)
+            links_file.close()
 
             return await interaction.response.send_message("Attempting to play...")
         except Exception as e:
@@ -258,13 +270,16 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     artist_text += artist["name"] + ", "
                 artist_text = artist_text[:-2]
 
-                songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"]])
+                #               track name            artist(s)          spotify link                               album image url
+                songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], item["track"]["album"]["images"][0]["url"]])
 
             output_string = f"Downloading songs from *{playlist_name}*... \n \n"
             for song in songs:
                 output_string += ":arrow_down: " + song[0] + " - " + song[1] + "\n"
 
             send_message = await interaction.channel.send(output_string)
+
+            album_image_links = {}
 
             for index, song in enumerate(songs):
                 await interaction.channel.typing()
@@ -275,8 +290,13 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     updated_msg = ""
                     for line in text_array:
                         updated_msg += line + "\n"
+
+                    album_image_links[song[1] + " - " + song[0]] = song[3] # Probably would be best to use a UUID for this, but it should work for now
                     send_message = await send_message.edit(content=updated_msg)
 
+            links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
+            json.dump(album_image_links, links_file)
+            links_file.close()
             await interaction.channel.send("Done!")
 
         except Exception as e:
