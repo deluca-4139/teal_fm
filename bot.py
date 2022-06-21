@@ -1,5 +1,6 @@
 import discord
 from discord import app_commands
+from discord.app_commands import Choice
 from discord.ext import commands
 
 import spotipy
@@ -7,6 +8,7 @@ from spotipy import SpotifyClientCredentials
 
 import asyncio, subprocess, os, random, json
 from async_timeout import timeout
+from typing import List
 
 env = []
 with open("env", "r") as infile:
@@ -15,6 +17,13 @@ with open("env", "r") as infile:
 
 client_creds = SpotifyClientCredentials(client_id=env[1], client_secret=env[2])
 spotify_client = spotipy.Spotify(client_credentials_manager=client_creds)
+
+playlist_dirs = []
+
+def update_playlist_dirs():
+    if os.path.exists("./playlists"):
+        for entry in os.listdir("./playlists"):
+            playlist_dirs.append(entry)
 
 ######################################################
 
@@ -187,6 +196,8 @@ class VoiceCog(commands.GroupCog, name="voice"):
 
     @app_commands.command(name="play")
     async def play(self, interaction: discord.Interaction, target: str, shuffle: bool):
+        update_playlist_dirs()
+
         if not interaction.guild.voice_client:
             # TODO: maybe just have the bot join the voice channel?
             return await interaction.response.send_message("I am not currently connected to a voice channel!")
@@ -217,6 +228,16 @@ class VoiceCog(commands.GroupCog, name="voice"):
         except Exception as e:
             await interaction.channel.send(f"Something went wrong. Error: `{e}`")
 
+    @play.autocomplete('target')
+    async def target_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        return [
+            app_commands.Choice(name=dir, value=dir) for dir in playlist_dirs if current.lower() in dir.lower()
+        ]
+
 class PlaylistCog(commands.GroupCog, name="playlist"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -233,16 +254,15 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
     @app_commands.command(name="list")
     async def list(self, interaction: discord.Interaction) -> None:
-        if not os.path.exists("./playlists"):
-            return await interaction.response.send_message("I have no playlists downloaded!")
+        update_playlist_dirs()
 
-        if len(os.listdir("./playlists")) == 0:
+        if len(playlist_dirs) == 0:
             return await interaction.response.send_message("I have no playlists downloaded!")
 
         output_string = "Downloaded playlists:\n \n"
 
-        for entry in os.listdir("./playlists"):
-            output_string += "~ " + entry + "\n"
+        for dir in playlist_dirs:
+            output_string += "~ " + dir + "\n"
 
         return await interaction.response.send_message(output_string)
 
@@ -313,6 +333,8 @@ async def main():
     intents = discord.Intents.default()
     intents.message_content = True
     bot = commands.Bot(command_prefix="!", description="Bot is in testing!", intents=intents)
+
+    update_playlist_dirs()
 
     async with bot:
         @bot.event
