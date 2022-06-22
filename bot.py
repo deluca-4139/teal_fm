@@ -42,8 +42,8 @@ class Player:
         self.next = asyncio.Event()
 
         self.volume = 0.5
-        self.current = None
         self.song_list = []
+        self.song_paths = []
 
         self.album_image_links = {}
 
@@ -64,7 +64,6 @@ class Player:
                 pass
 
             source.volume = self.volume
-            self.current = source
 
             playing_embed = discord.Embed(title="Now Playing", description=self.song_list[0])
             playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
@@ -74,7 +73,12 @@ class Player:
             self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
             await self.next.wait()
 
-            self.song_list.pop(0)
+            last_played = self.song_list.pop(0)
+            last_path = self.song_paths.pop(0)
+            if self.endless:
+                self.song_list.append(last_played)
+                self.song_paths.append(last_path)
+                await self.queue.put(discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(last_path)))
             await self.ctx.edit_original_message(content="", embed=None) # Embed might not update properly if we don't clear it first
 
             # TODO: fix? maybe unnecessary?
@@ -82,7 +86,6 @@ class Player:
                 source.cleanup()
             except ValueError:
                 pass
-            self.current = None
 
 class PlayerButtons(discord.ui.View):
     def __init__(self, bot):
@@ -142,6 +145,10 @@ class PlayerButtons(discord.ui.View):
             current_voice.stop()
 
             cog = self.bot.get_cog("voice")
+            # We need to confirm this value is false,
+            # otherwise the queue will never be empty
+            cog.players[interaction.guild.id].endless = False
+
             while not cog.players[interaction.guild.id].queue.empty():
                 await cog.players[interaction.guild.id].queue.get()
             del cog.players[interaction.guild.id]
@@ -155,6 +162,7 @@ class VoiceCog(commands.GroupCog, name="voice"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.players = {}
+        self.endless = False
         super().__init__()
 
     def get_player(self, ctx):
@@ -195,7 +203,7 @@ class VoiceCog(commands.GroupCog, name="voice"):
         return await interaction.response.send_message("Left voice!")
 
     @app_commands.command(name="play")
-    async def play(self, interaction: discord.Interaction, target: str, shuffle: bool):
+    async def play(self, interaction: discord.Interaction, target: str, shuffle: bool, endless: bool = False):
         update_playlist_dirs()
 
         if not interaction.guild.voice_client:
@@ -205,20 +213,24 @@ class VoiceCog(commands.GroupCog, name="voice"):
         try:
             player = self.get_player(interaction)
             player.ctx = interaction
+            player.endless = endless
 
             song_list = os.listdir(f"./playlists/{target}")
             if shuffle:
                 random.shuffle(song_list)
 
+            paths = []
             for song in song_list:
                 if song != ".spotdl-cache" and song != "album_image_links.json":
                     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(f"./playlists/{target}/{song}"))
                     await player.queue.put(source)
+                    paths.append(f"./playlists/{target}/{song}")
 
                     index = len(song) - 1
                     while song[index] != '.':
                         index -= 1
                     player.song_list.append(song[0:index])
+            player.song_paths = paths
 
             links_file = open(f"./playlists/{target}/album_image_links.json", "r")
             player.album_image_links = json.load(links_file)
