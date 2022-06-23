@@ -223,8 +223,6 @@ class VoiceCog(commands.GroupCog, name="voice"):
 
     @app_commands.command(name="play")
     async def play(self, interaction: discord.Interaction, target: str, shuffle: bool, endless: bool = False):
-        update_playlist_dirs()
-
         if not interaction.guild.voice_client:
             # TODO: maybe just have the bot join the voice channel?
             return await interaction.response.send_message("I am not currently connected to a voice channel!")
@@ -315,7 +313,10 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
             # directory can be successfully created
             if(os.path.exists(f"./playlists/{playlist_name}")):
                 # TODO: check link for updated playlist info
-                return await interaction.channel.send("I already have a directory with that name! Have you previously downloaded this playlist?")
+                # Note that two playlists could have the same name,
+                # so we should confirm that the playlists have the
+                # same content/UUID before updating the downloads
+                return await interaction.edit_original_message(content="I already have a directory with that name! Have you previously downloaded this playlist?")
             os.mkdir(f"./playlists/{playlist_name}")
 
             songs = []
