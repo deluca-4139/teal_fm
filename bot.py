@@ -299,7 +299,9 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
     @app_commands.command(name="download")
     async def download(self, interaction: discord.Interaction, url: str) -> None:
-        # TODO: parse URL to make sure it is a valid spotify playlist
+        if not (("http" in url) and ("open.spotify.com/playlist" in url)):
+            return await interaction.response.send_message("I didn't recognize your link; please provide me with a valid URL/URI to a Spotify playlist.")
+
         send_message = await interaction.response.send_message(f"Link received. Parsing playlist data...")
 
         if not os.path.exists("./playlists"):
