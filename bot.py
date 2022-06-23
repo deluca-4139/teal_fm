@@ -96,14 +96,23 @@ class PlayerButtons(discord.ui.View):
         for child in self.children:
             child.style = discord.ButtonStyle.primary
 
-    def get_current_voice(self, interaction):
+    def get_current_voice(self, interaction: discord.Interaction):
         for voice in self.bot.voice_clients:
             if voice.guild.id == interaction.guild.id:
                 return voice
         return None
 
+    def check_roles(self, interaction: discord.Interaction, role: int) -> bool:
+        if role in [role.id for role in interaction.user.roles]:
+            return True
+        else:
+            return False
+
     @discord.ui.button(label="", emoji="⏸️", style=discord.ButtonStyle.primary)
     async def pause(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.check_roles(interaction, int(env[3])):
+            return await interaction.response.edit_message(view=self)
+
         current_voice = self.get_current_voice(interaction)
 
         if current_voice is not None:
@@ -117,6 +126,9 @@ class PlayerButtons(discord.ui.View):
 
     @discord.ui.button(label="", emoji="▶️", style=discord.ButtonStyle.success)
     async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.check_roles(interaction, int(env[3])):
+            return await interaction.response.edit_message(view=self)
+
         current_voice = self.get_current_voice(interaction)
 
         if current_voice is not None:
@@ -130,6 +142,9 @@ class PlayerButtons(discord.ui.View):
 
     @discord.ui.button(label="", emoji="⏭️", style=discord.ButtonStyle.primary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.check_roles(interaction, int(env[3])):
+            return await interaction.response.edit_message(view=self)
+
         current_voice = self.get_current_voice(interaction)
 
         if current_voice is not None:
@@ -139,6 +154,9 @@ class PlayerButtons(discord.ui.View):
 
     @discord.ui.button(label="", emoji="⏹️", style=discord.ButtonStyle.primary)
     async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.check_roles(interaction, int(env[3])):
+            return await interaction.response.edit_message(view=self)
+
         current_voice = self.get_current_voice(interaction)
 
         if current_voice is not None:
