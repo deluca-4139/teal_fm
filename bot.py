@@ -195,9 +195,8 @@ class VoiceCog(commands.GroupCog, name="voice"):
     @app_commands.command(name="join")
     async def join(self, interaction: discord.Interaction, channel: discord.VoiceChannel=None):
         if not channel:
-            if interaction.user.voice.channel:
+            if interaction.user.voice:
                 try:
-                    # TODO: fix; does not properly return when user is not in voice channel
                     channel = interaction.user.voice.channel
                 except AttributeError:
                     return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.")
