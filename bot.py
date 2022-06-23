@@ -23,7 +23,8 @@ playlist_dirs = []
 def update_playlist_dirs():
     if os.path.exists("./playlists"):
         for entry in os.listdir("./playlists"):
-            playlist_dirs.append(entry)
+            if entry not in playlist_dirs:
+                playlist_dirs.append(entry)
 
 ######################################################
 
@@ -216,6 +217,7 @@ class VoiceCog(commands.GroupCog, name="voice"):
     @app_commands.command(name="leave")
     async def leave(self, interaction: discord.Interaction):
         # TODO: cleanup before leaving if bot is currently playing
+        # TODO: check if bot is in voice before DCing
         await interaction.guild.voice_client.disconnect()
         return await interaction.response.send_message("Left voice!")
 
@@ -238,7 +240,7 @@ class VoiceCog(commands.GroupCog, name="voice"):
 
             paths = []
             for song in song_list:
-                if song != ".spotdl-cache" and song != "album_image_links.json":
+                if song not in [".spotdl-cache", "album_image_links.json", "failed_songs.txt"]:
                     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(f"./playlists/{target}/{song}"))
                     await player.queue.put(source)
                     paths.append(f"./playlists/{target}/{song}")
@@ -307,6 +309,8 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
             playlist_data = spotify_client.playlist_tracks(url)
             playlist_name = spotify_client.playlist(url)["name"]
 
+            # TODO: sanitize playlist name to make sure
+            # directory can be successfully created
             if(os.path.exists(f"./playlists/{playlist_name}")):
                 # TODO: check link for updated playlist info
                 return await interaction.channel.send("I already have a directory with that name! Have you previously downloaded this playlist?")
@@ -330,11 +334,12 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
             album_image_links = {}
             text_array = output_string.split("\n")
+            failed_songs_output = ""
 
             for index, song in enumerate(songs):
                 await interaction.channel.typing()
-                return_val = subprocess.call(["spotdl", "-o", f"./playlists/{playlist_name}", song[2]]) # TODO: grab m3u to keep track of playlist data
-                if return_val == 0: # TODO: handle nonzero return codes by keeping track of failed downloads
+                run_return = subprocess.run(["spotdl", "-o", f"./playlists/{playlist_name}", song[2]], capture_output=True, text=True) # TODO: grab m3u to keep track of playlist data
+                if run_return.returncode == 0:
                     text_array[index + 2] = ":white_check_mark: " + song[0] + " - " + song[1]
                     updated_msg = ""
                     for line in text_array:
@@ -342,11 +347,28 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
                     album_image_links[song[1] + " - " + song[0]] = song[3] # Probably would be best to use a UUID for this, but it should work for now
                     await interaction.edit_original_message(content=updated_msg)
+                else:
+                    text_array[index + 2] = ":x: " + song[0] + " - " + song[1]
+                    updated_msg = ""
+                    for line in text_array:
+                        updated_msg += line + "\n"
+
+                    failed_songs_output += f"Downloading of {song[0]} - {song[1]} failed with error code {run_return.returncode}. \n stdout: \n {run_return.stdout} \n\n stderr: \n {run_return.stderr} \n\n"
+
+                    await interaction.edit_original_message(content=updated_msg)
 
             links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
             json.dump(album_image_links, links_file)
             links_file.close()
             await interaction.channel.send("Done!")
+
+            if failed_songs_output != "":
+                fail_file = open(f"./playlists/{playlist_name}/failed_songs.txt", "w") # TODO: will need to change this when adding modular playlist updating
+                fail_file.write(failed_songs_output)
+                fail_file.close()
+                await interaction.channel.send("Some songs were unable to be downloaded. Please check error logs for more information.")
+
+            update_playlist_dirs()
 
         except Exception as e:
             await interaction.channel.send(f"Something went wrong. Error: `{e}`")
