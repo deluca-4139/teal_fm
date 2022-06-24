@@ -275,9 +275,10 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
     @commands.command()
     async def sync(self, message):
         try:
-            await self.bot.tree.sync(guild=discord.Object(id=514188804433641472))
-        except:
-            await message.send("Something went wrong while syncing commands.")
+            for guild in env[4:]:
+                await self.bot.tree.sync(guild=discord.Object(id=guild))
+        except Exception as e:
+            await message.send(f"Something went wrong while syncing commands. Error: `{e}`")
         else:
             await message.send("Commands have been synced!")
 
@@ -416,8 +417,8 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(PlaylistCog(bot), guild=discord.Object(id=514188804433641472))
-    await bot.add_cog(VoiceCog(bot), guild=discord.Object(id=514188804433641472))
+    await bot.add_cog(PlaylistCog(bot), guilds=[discord.Object(id=guild) for guild in env[4:]])
+    await bot.add_cog(VoiceCog(bot), guilds=[discord.Object(id=guild) for guild in env[4:]])
 
 ######################################################
 
