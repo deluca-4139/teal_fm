@@ -193,7 +193,8 @@ class VoiceCog(commands.GroupCog, name="voice"):
 
         return player
 
-    @app_commands.command(name="join")
+    @app_commands.command(name="join", description="Join a voice channel.")
+    @app_commands.describe(channel="the voice channel to join, or blank for the channel you're in")
     async def join(self, interaction: discord.Interaction, channel: discord.VoiceChannel=None):
         if not channel:
             if interaction.user.voice:
@@ -214,14 +215,15 @@ class VoiceCog(commands.GroupCog, name="voice"):
             await channel.connect()
             return await interaction.response.send_message(f"Joined channel {channel}!")
 
-    @app_commands.command(name="leave")
+    @app_commands.command(name="leave", description="Leave the current voice channel.")
     async def leave(self, interaction: discord.Interaction):
         # TODO: cleanup before leaving if bot is currently playing
         # TODO: check if bot is in voice before DCing
         await interaction.guild.voice_client.disconnect()
         return await interaction.response.send_message("Left voice!")
 
-    @app_commands.command(name="play")
+    @app_commands.command(name="play", description="Play a downloaded playlist.")
+    @app_commands.describe(target="the playlist you want to play", shuffle="whether or not to shuffle the playlist", endless="whether you want the playlist to loop")
     async def play(self, interaction: discord.Interaction, target: str, shuffle: bool, endless: bool = False):
         if not interaction.guild.voice_client:
             # TODO: maybe just have the bot join the voice channel?
@@ -282,7 +284,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
         else:
             await message.send("Commands have been synced!")
 
-    @app_commands.command(name="list")
+    @app_commands.command(name="list", description="List downloaded playlists.")
     async def list(self, interaction: discord.Interaction) -> None:
         update_playlist_dirs()
 
@@ -296,7 +298,8 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
         return await interaction.response.send_message(output_string)
 
-    @app_commands.command(name="download")
+    @app_commands.command(name="download", description="Download a Spotify playlist.")
+    @app_commands.describe(url="the URL of the playlist you want to download")
     async def download(self, interaction: discord.Interaction, url: str) -> None:
         if not (("http" in url) and ("open.spotify.com/playlist" in url)):
             return await interaction.response.send_message("I didn't recognize your link; please provide me with a valid URL/URI to a Spotify playlist.")
