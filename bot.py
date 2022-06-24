@@ -305,9 +305,25 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
         if not os.path.exists("./playlists"):
             os.mkdir("./playlists")
 
+        LIMIT = 100
         try:
-            playlist_data = spotify_client.playlist_tracks(url)
+            playlist_tracks = []
+            playlist_data = spotify_client.playlist_tracks(url, limit=LIMIT)
             playlist_name = spotify_client.playlist(url)["name"]
+            total_songs = playlist_data["total"]
+
+            # We have to use this offset structure
+            # because we can't grab more than 100
+            # tracks from the playlist at once.
+            index = 0
+            while playlist_data['next'] is not None:
+                for item in playlist_data["items"]:
+                    playlist_tracks.append(item)
+                index += LIMIT
+                playlist_data = spotify_client.playlist_tracks(url, offset=index, limit=LIMIT)
+            if playlist_data["items"] != []:
+                for item in playlist_data["items"]:
+                    playlist_tracks.append(item)
 
             # TODO: sanitize playlist name to make sure
             # directory can be successfully created
@@ -320,7 +336,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
             os.mkdir(f"./playlists/{playlist_name}")
 
             songs = []
-            for item in playlist_data["items"]:
+            for item in playlist_tracks:
                 artist_text = ""
                 for artist in item["track"]["artists"]:
                     artist_text += artist["name"] + ", "
@@ -329,43 +345,65 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 #               track name            artist(s)          spotify link                               album image url
                 songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], item["track"]["album"]["images"][0]["url"]])
 
-            output_string = f"Downloading songs from *{playlist_name}*... \n \n"
-            for song in songs:
-                output_string += ":arrow_down: " + song[0] + " - " + song[1] + "\n"
+            output_string = f"Downloading {total_songs} songs from *{playlist_name}*... \n \n"
+            if len(songs) < 100:
+                for song in songs:
+                    output_string += f":arrow_down: {song[0]} - {song[1]}\n"
+            else:
+                output_string += f"(0/{total_songs})\n"
+                output_string += f":arrow_down: {songs[0][0]} - {songs[0][1]}\n"
+                output_string += f":arrow_down: {songs[1][0]} - {songs[1][1]}\n"
 
             await interaction.edit_original_message(content=output_string)
 
             album_image_links = {}
             text_array = output_string.split("\n")
+            failed_songs_count = 0
             failed_songs_output = ""
 
-            for index, song in enumerate(songs):
+            for index in range(len(songs)):
                 await interaction.channel.typing()
-                run_return = subprocess.run(["spotdl", "-o", f"./playlists/{playlist_name}", song[2]], capture_output=True, text=True) # TODO: grab m3u to keep track of playlist data
+                run_return = subprocess.run(["spotdl", "-o", f"./playlists/{playlist_name}", songs[index][2]], capture_output=True, text=True) # TODO: grab m3u to keep track of playlist data
                 if run_return.returncode == 0:
-                    text_array[index + 2] = ":white_check_mark: " + song[0] + " - " + song[1]
+                    if len(songs) < 100:
+                        text_array[index + 2] = f":white_check_mark: {songs[index][0]} - {songs[index][1]}"
+                    else:
+                        text_array[2] = f"({index+1}/{total_songs})"
+                        text_array[3] = f":white_check_mark: {songs[index][0]} - {songs[index][1]}"
+                        text_array[4] = f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}"
+
                     updated_msg = ""
                     for line in text_array:
                         updated_msg += line + "\n"
 
-                    album_image_links[song[1] + " - " + song[0]] = song[3] # Probably would be best to use a UUID for this, but it should work for now
+                    album_image_links[songs[index][1] + " - " + songs[index][0]] = songs[index][3] # Probably would be best to use a UUID for this, but it should work for now
                     await interaction.edit_original_message(content=updated_msg)
                 else:
-                    text_array[index + 2] = ":x: " + song[0] + " - " + song[1]
+                    if len(songs) < 100:
+                        text_array[index + 2] = f":x: {songs[index][0]} - {songs[index][1]}"
+                    else:
+                        text_array[2] = f"({index+1}/{total_songs})"
+                        text_array[3] = f":x: {songs[index][0]} - {songs[index][1]}"
+                        text_array[4] = f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}"
+
                     updated_msg = ""
                     for line in text_array:
                         updated_msg += line + "\n"
 
-                    failed_songs_output += f"Downloading of {song[0]} - {song[1]} failed with error code {run_return.returncode}. \n stdout: \n {run_return.stdout} \n\n stderr: \n {run_return.stderr} \n\n"
+                    failed_songs_output += f"Downloading of {songs[index][0]} - {songs[index][1]} failed with error code {run_return.returncode}. \n stdout: \n {run_return.stdout} \n\n stderr: \n {run_return.stderr} \n\n"
+                    failed_songs_count += 1
 
                     await interaction.edit_original_message(content=updated_msg)
 
             links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
             json.dump(album_image_links, links_file)
             links_file.close()
-            await interaction.channel.send("Done!")
+            await interaction.channel.send(f"Done! Downloaded {total_songs - failed_songs_count} songs. {(f'{failed_songs_count} songs failed to be downloaded.') if failed_songs_count != 0 else ''}")
 
-            if failed_songs_output != "":
+            # TODO: should probably do this after each
+            # failed download so that in the event of a crash,
+            # the information can still be retrieved
+            if failed_songs_count != 0:
                 fail_file = open(f"./playlists/{playlist_name}/failed_songs.txt", "w") # TODO: will need to change this when adding modular playlist updating
                 fail_file.write(failed_songs_output)
                 fail_file.close()
