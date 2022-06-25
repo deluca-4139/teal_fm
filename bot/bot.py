@@ -309,6 +309,15 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
         return await interaction.response.send_message(output_string)
 
+    def write_output_files(self, playlist_name: str, album_image_links: dict, failed_songs_output: str):
+        links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
+        json.dump(album_image_links, links_file)
+        links_file.close()
+        if failed_songs_output != "":
+            fail_file = open(f"./playlists/{playlist_name}/failed_songs.txt", "w") # TODO: will need to change this when adding modular playlist updating
+            fail_file.write(failed_songs_output)
+            fail_file.close()
+
     @app_commands.command(name="download", description="Download a Spotify playlist.")
     @app_commands.describe(url="the URL of the playlist you want to download")
     async def download(self, interaction: discord.Interaction, url: str) -> None:
@@ -361,7 +370,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], item["track"]["album"]["images"][0]["url"]])
 
             output_string = f"Downloading {total_songs} songs from *{playlist_name}*... \n \n"
-            if len(songs) < 100:
+            if len(songs) < LIMIT:
                 for song in songs:
                     output_string += f":arrow_down: {song[0]} - {song[1]}\n"
             else:
@@ -381,12 +390,12 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 await interaction.channel.typing()
                 run_return = subprocess.run(["spotdl", "-o", f"./playlists/{playlist_name}", songs[index][2]], capture_output=True, text=True) # TODO: grab m3u to keep track of playlist data
                 if run_return.returncode == 0:
-                    if len(songs) < 100:
+                    if len(songs) < LIMIT:
                         text_array[index + 2] = f":white_check_mark: {songs[index][0]} - {songs[index][1]}"
                     else:
                         text_array[2] = f"({index+1}/{total_songs})"
                         text_array[3] = f":white_check_mark: {songs[index][0]} - {songs[index][1]}"
-                        text_array[4] = f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}"
+                        text_array[4] = (f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}" if index < len(songs)-1 else "")
 
                     updated_msg = ""
                     for line in text_array:
@@ -395,12 +404,12 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     album_image_links[songs[index][1] + " - " + songs[index][0]] = songs[index][3] # Probably would be best to use a UUID for this, but it should work for now
                     output_message = await output_message.edit(content=updated_msg)
                 else:
-                    if len(songs) < 100:
+                    if len(songs) < LIMIT:
                         text_array[index + 2] = f":x: {songs[index][0]} - {songs[index][1]}"
                     else:
                         text_array[2] = f"({index+1}/{total_songs})"
                         text_array[3] = f":x: {songs[index][0]} - {songs[index][1]}"
-                        text_array[4] = f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}"
+                        text_array[4] = (f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}" if index < len(songs)-1 else "")
 
                     updated_msg = ""
                     for line in text_array:
@@ -411,23 +420,23 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
                     output_message = await output_message.edit(content=updated_msg)
 
-            links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
-            json.dump(album_image_links, links_file)
-            links_file.close()
+            self.write_output_files(playlist_name, album_image_links, failed_songs_output)
             await interaction.channel.send(f"Done! Downloaded {total_songs - failed_songs_count} songs. {(f'{failed_songs_count} songs failed to be downloaded.') if failed_songs_count != 0 else ''}")
 
             # TODO: should probably do this after each
             # failed download so that in the event of a crash,
             # the information can still be retrieved
             if failed_songs_count != 0:
-                fail_file = open(f"./playlists/{playlist_name}/failed_songs.txt", "w") # TODO: will need to change this when adding modular playlist updating
-                fail_file.write(failed_songs_output)
-                fail_file.close()
                 await interaction.channel.send("Some songs were unable to be downloaded. Please check error logs for more information.")
 
             update_playlist_dirs()
 
         except Exception as e:
+            # Write output files anyways just in
+            # case we want to use the playlist.
+            self.write_output_files(playlist_name, album_image_links, failed_songs_output)
+            update_playlist_dirs()
+
             await interaction.channel.send(f"Something went wrong. Error: `{e}`")
 
 
