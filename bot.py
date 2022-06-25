@@ -41,6 +41,8 @@ class Player:
 
         self.queue = asyncio.Queue()
         self.next = asyncio.Event()
+        self.now_playing = None
+        self.playlist_name = ""
 
         self.volume = 0.5
         self.song_list = []
@@ -66,10 +68,18 @@ class Player:
 
             source.volume = self.volume
 
-            playing_embed = discord.Embed(title="Now Playing", description=self.song_list[0])
+            playing_embed = discord.Embed(title=f"Now Playing ~ {self.playlist_name}", description=self.song_list[0])
             playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
             playing_embed.set_image(url=self.album_image_links[self.song_list[0]])
-            await self.ctx.edit_original_message(content="", embed=playing_embed, view=PlayerButtons(self.bot))
+
+            # TODO: the view might time out if the song
+            # that's playing is longer than 15 minutes.
+            # Will need to figure out how to pass
+            # timeout=None into the view when creating
+            if self.now_playing is None:
+                self.now_playing = await self.ctx.channel.send(content="", embed=playing_embed, view=PlayerButtons(self.bot))
+            else:
+                await self.now_playing.edit(content="", embed=playing_embed, view=PlayerButtons(self.bot))
 
             self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
             await self.next.wait()
@@ -80,7 +90,7 @@ class Player:
                 self.song_list.append(last_played)
                 self.song_paths.append(last_path)
                 await self.queue.put(discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(last_path)))
-            await self.ctx.edit_original_message(content="", embed=None) # Embed might not update properly if we don't clear it first
+            await self.now_playing.edit(content="", embed=None) # Embed might not update properly if we don't clear it first
 
             # TODO: fix? maybe unnecessary?
             try:
@@ -250,12 +260,13 @@ class VoiceCog(commands.GroupCog, name="voice"):
                         index -= 1
                     player.song_list.append(song[0:index])
             player.song_paths = paths
+            player.playlist_name = target
 
             links_file = open(f"./playlists/{target}/album_image_links.json", "r")
             player.album_image_links = json.load(links_file)
             links_file.close()
 
-            return await interaction.response.send_message("Attempting to play...")
+            return await interaction.response.send_message("Started playing!", ephemeral=True)
         except Exception as e:
             await interaction.channel.send(f"Something went wrong. Error: `{e}`")
 
@@ -304,7 +315,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
         if not (("http" in url) and ("open.spotify.com/playlist" in url)):
             return await interaction.response.send_message("I didn't recognize your link; please provide me with a valid URL/URI to a Spotify playlist.")
 
-        send_message = await interaction.response.send_message(f"Link received. Parsing playlist data...")
+        send_message = await interaction.response.send_message(f"Link received. Parsing playlist data...", ephemeral=True)
 
         if not os.path.exists("./playlists"):
             os.mkdir("./playlists")
@@ -358,7 +369,8 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 output_string += f":arrow_down: {songs[0][0]} - {songs[0][1]}\n"
                 output_string += f":arrow_down: {songs[1][0]} - {songs[1][1]}\n"
 
-            await interaction.edit_original_message(content=output_string)
+            await interaction.edit_original_message(content="Download started.")
+            output_message = await interaction.channel.send(content=output_string)
 
             album_image_links = {}
             text_array = output_string.split("\n")
@@ -381,7 +393,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                         updated_msg += line + "\n"
 
                     album_image_links[songs[index][1] + " - " + songs[index][0]] = songs[index][3] # Probably would be best to use a UUID for this, but it should work for now
-                    await interaction.edit_original_message(content=updated_msg)
+                    output_message = await output_message.edit(content=updated_msg)
                 else:
                     if len(songs) < 100:
                         text_array[index + 2] = f":x: {songs[index][0]} - {songs[index][1]}"
@@ -397,7 +409,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     failed_songs_output += f"Downloading of {songs[index][0]} - {songs[index][1]} failed with error code {run_return.returncode}. \n stdout: \n {run_return.stdout} \n\n stderr: \n {run_return.stderr} \n\n"
                     failed_songs_count += 1
 
-                    await interaction.edit_original_message(content=updated_msg)
+                    output_message = await output_message.edit(content=updated_msg)
 
             links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
             json.dump(album_image_links, links_file)
