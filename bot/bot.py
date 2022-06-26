@@ -69,6 +69,7 @@ class Player:
             source.volume = self.volume
 
             playing_embed = discord.Embed(title=f"Now Playing ~ {self.playlist_name}", description=self.song_list[0])
+            playing_embed.add_field(name="Link:", value=f"[Spotify]({self.metadata[self.song_list[0]]['url']})")
             playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
             playing_embed.set_image(url=self.metadata[self.song_list[0]]["album_art"])
 
