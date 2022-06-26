@@ -48,7 +48,7 @@ class Player:
         self.song_list = []
         self.song_paths = []
 
-        self.album_image_links = {}
+        self.metadata = {}
 
         # This will likely break if you switch to 3.10 in the future
         bot.loop.create_task(self.player_loop())
@@ -70,7 +70,7 @@ class Player:
 
             playing_embed = discord.Embed(title=f"Now Playing ~ {self.playlist_name}", description=self.song_list[0])
             playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
-            playing_embed.set_image(url=self.album_image_links[self.song_list[0]])
+            playing_embed.set_image(url=self.metadata[self.song_list[0]]["album_art"])
 
             # TODO: the view might time out if the song
             # that's playing is longer than 15 minutes.
@@ -244,13 +244,14 @@ class VoiceCog(commands.GroupCog, name="voice"):
             player.ctx = interaction
             player.endless = endless
 
+            # TODO: fix for playlist order
             song_list = os.listdir(f"./playlists/{target}")
             if shuffle:
                 random.shuffle(song_list)
 
             paths = []
             for song in song_list:
-                if song not in [".spotdl-cache", "album_image_links.json", "failed_songs.txt"]:
+                if song not in [".spotdl-cache", "failed_songs.txt", "metadata.json"]:
                     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(f"./playlists/{target}/{song}"))
                     await player.queue.put(source)
                     paths.append(f"./playlists/{target}/{song}")
@@ -262,9 +263,9 @@ class VoiceCog(commands.GroupCog, name="voice"):
             player.song_paths = paths
             player.playlist_name = target
 
-            links_file = open(f"./playlists/{target}/album_image_links.json", "r")
-            player.album_image_links = json.load(links_file)
-            links_file.close()
+            metadata_file = open(f"./playlists/{target}/metadata.json", "r")
+            player.metadata = json.load(metadata_file)
+            metadata_file.close()
 
             return await interaction.response.send_message("Started playing!", ephemeral=True)
         except Exception as e:
@@ -309,10 +310,10 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
         return await interaction.response.send_message(output_string)
 
-    def write_output_files(self, playlist_name: str, album_image_links: dict, failed_songs_output: str):
-        links_file = open(f"./playlists/{playlist_name}/album_image_links.json", "w")
-        json.dump(album_image_links, links_file)
-        links_file.close()
+    def write_output_files(self, playlist_name: str, metadata: dict, failed_songs_output: str):
+        metadata_file = open(f"./playlists/{playlist_name}/metadata.json", "w")
+        json.dump(metadata, metadata_file)
+        metadata_file.close()
         if failed_songs_output != "":
             fail_file = open(f"./playlists/{playlist_name}/failed_songs.txt", "w") # TODO: will need to change this when adding modular playlist updating
             fail_file.write(failed_songs_output)
@@ -322,7 +323,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
     @app_commands.describe(url="the URL of the playlist you want to download")
     async def download(self, interaction: discord.Interaction, url: str) -> None:
         if not (("http" in url) and ("open.spotify.com/playlist" in url)):
-            return await interaction.response.send_message("I didn't recognize your link; please provide me with a valid URL/URI to a Spotify playlist.")
+            return await interaction.response.send_message("I didn't recognize your link; please provide me with a valid URL/URI to a Spotify playlist.", ephemeral=True)
 
         send_message = await interaction.response.send_message(f"Link received. Parsing playlist data...", ephemeral=True)
 
@@ -334,7 +335,6 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
             playlist_tracks = []
             playlist_data = spotify_client.playlist_tracks(url, limit=LIMIT)
             playlist_name = spotify_client.playlist(url)["name"]
-            total_songs = playlist_data["total"]
 
             # We have to use this offset structure
             # because we can't grab more than 100
@@ -349,6 +349,9 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 for item in playlist_data["items"]:
                     playlist_tracks.append(item)
 
+            songs = []
+            metadata = {}
+
             # TODO: sanitize playlist name to make sure
             # directory can be successfully created
             if(os.path.exists(f"./playlists/{playlist_name}")):
@@ -356,32 +359,64 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 # Note that two playlists could have the same name,
                 # so we should confirm that the playlists have the
                 # same content/UUID before updating the downloads
-                return await interaction.edit_original_message(content="I already have a directory with that name! Have you previously downloaded this playlist?")
-            os.mkdir(f"./playlists/{playlist_name}")
+                await interaction.edit_original_message(content="Playlist previously downloaded. Updating...")
+                if os.path.exists(f"./playlists/{playlist_name}/metadata.json"):
+                    metadata_file = open(f"./playlists/{playlist_name}/metadata.json", "r")
+                    metadata = json.load(metadata_file)
+                else:
+                    metadata["tracks"] = {}
+                    for index, item in enumerate(playlist_tracks):
+                        artist_text = ""
+                        for artist in item["track"]["artists"]:
+                            artist_text += artist["name"] + ", "
+                        artist_text = artist_text[:-2]
 
-            songs = []
-            for item in playlist_tracks:
+                        if f"{artist_text} - {item['track']['name']}.mp3" in os.listdir(f"./playlists/{playlist_name}"):
+                            metadata[artist_text + " - " + item["track"]["name"]] = {"album_art": item["track"]["album"]["images"][0]["url"], "url": item["track"]["external_urls"]["spotify"], "download_succeeded": True} # Probably would be best to use a UUID for this, but it should work for now
+                            metadata["tracks"][index] = artist_text + " - " + item["track"]["name"]
+                    metadata_file = open(f"./playlists/{playlist_name}/metadata.json", "w")
+                    json.dump(metadata, metadata_file)
+                    metadata_file.close()
+
+                # TODO: fix
+                # directory_contents = os.listdir(f"./playlists/{playlist_name}")
+                # for item in directory_contents:
+                #     if item not in [".spotdl-cache", "failed_songs.txt", "metadata.json"]:
+                #         if item[:-4] not in metadata:
+                #             os.remove(f"./playlists/{playlist_name}/{item}")
+
+            else:
+                os.mkdir(f"./playlists/{playlist_name}")
+                metadata["tracks"] = {}
+
+            for index, item in enumerate(playlist_tracks):
                 artist_text = ""
                 for artist in item["track"]["artists"]:
                     artist_text += artist["name"] + ", "
                 artist_text = artist_text[:-2]
 
-                #               track name            artist(s)          spotify link                               album image url
-                songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], item["track"]["album"]["images"][0]["url"]])
+                if len(metadata) != 1:
+                    if f"{artist_text} - {item['track']['name']}" in metadata:
+                        continue
+                #               track name            artist(s)          spotify link                               album image url                   track number
+                songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], item["track"]["album"]["images"][0]["url"], index])
+                # Track ordering will likely break if playlist order is changed and then updated. Not sure how important that is...
 
-            output_string = f"Downloading {total_songs} songs from *{playlist_name}*... \n \n"
+            if len(songs) == 0:
+                return await interaction.edit_original_message(content="Playlist is up to date!")
+
+            output_string = f"Downloading {len(songs)} songs from *{playlist_name}*... \n \n"
             if len(songs) < LIMIT:
                 for song in songs:
                     output_string += f":arrow_down: {song[0]} - {song[1]}\n"
             else:
-                output_string += f"(0/{total_songs})\n"
+                output_string += f"(0/{len(songs)})\n"
                 output_string += f":arrow_down: {songs[0][0]} - {songs[0][1]}\n"
                 output_string += f":arrow_down: {songs[1][0]} - {songs[1][1]}\n"
 
             await interaction.edit_original_message(content="Download started.")
             output_message = await interaction.channel.send(content=output_string)
 
-            album_image_links = {}
             text_array = output_string.split("\n")
             failed_songs_count = 0
             failed_songs_output = ""
@@ -393,7 +428,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     if len(songs) < LIMIT:
                         text_array[index + 2] = f":white_check_mark: {songs[index][0]} - {songs[index][1]}"
                     else:
-                        text_array[2] = f"({index+1}/{total_songs})"
+                        text_array[2] = f"({index+1}/{len(songs)})"
                         text_array[3] = f":white_check_mark: {songs[index][0]} - {songs[index][1]}"
                         text_array[4] = (f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}" if index < len(songs)-1 else "")
 
@@ -401,15 +436,18 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     for line in text_array:
                         updated_msg += line + "\n"
 
-                    album_image_links[songs[index][1] + " - " + songs[index][0]] = songs[index][3] # Probably would be best to use a UUID for this, but it should work for now
+                    metadata[songs[index][1] + " - " + songs[index][0]] = {"album_art": songs[index][3], "url": songs[index][2], "download_succeeded": True} # Probably would be best to use a UUID for this, but it should work for now
+                    metadata["tracks"][songs[index][4]] = songs[index][1] + " - " + songs[index][0]
                     output_message = await output_message.edit(content=updated_msg)
                 else:
                     if len(songs) < LIMIT:
                         text_array[index + 2] = f":x: {songs[index][0]} - {songs[index][1]}"
                     else:
-                        text_array[2] = f"({index+1}/{total_songs})"
+                        text_array[2] = f"({index+1}/{len(songs)})"
                         text_array[3] = f":x: {songs[index][0]} - {songs[index][1]}"
                         text_array[4] = (f":arrow_down: {songs[index+1][0]} - {songs[index+1][1]}" if index < len(songs)-1 else "")
+
+                    metadata[songs[index][1] + " - " + songs[index][0]] = {"album_art": songs[index][3], "url": songs[index][2], "download_succeeded": False} # Probably would be best to use a UUID for this, but it should work for now
 
                     updated_msg = ""
                     for line in text_array:
@@ -420,8 +458,8 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
                     output_message = await output_message.edit(content=updated_msg)
 
-            self.write_output_files(playlist_name, album_image_links, failed_songs_output)
-            await interaction.channel.send(f"Done! Downloaded {total_songs - failed_songs_count} songs. {(f'{failed_songs_count} songs failed to be downloaded.') if failed_songs_count != 0 else ''}")
+            self.write_output_files(playlist_name, metadata, failed_songs_output)
+            await interaction.channel.send(f"Done! Downloaded {len(songs) - failed_songs_count} songs. {(f'{failed_songs_count} songs failed to be downloaded.') if failed_songs_count != 0 else ''}")
 
             # TODO: should probably do this after each
             # failed download so that in the event of a crash,
@@ -434,7 +472,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
         except Exception as e:
             # Write output files anyways just in
             # case we want to use the playlist.
-            self.write_output_files(playlist_name, album_image_links, failed_songs_output)
+            self.write_output_files(playlist_name, metadata, failed_songs_output)
             update_playlist_dirs()
 
             await interaction.channel.send(f"Something went wrong. Error: `{e}`")
