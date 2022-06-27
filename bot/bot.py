@@ -70,6 +70,7 @@ class Player:
             source.volume = self.volume
 
             playing_embed = discord.Embed(title=f"Now Playing ~ {self.playlist_name}", description=self.song_list[0])
+            # TODO: fix KeyError
             playing_embed.add_field(name="Link:", value=f"[Spotify]({self.metadata[self.song_list[0]]['url']})")
             playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
             playing_embed.set_image(url=self.metadata[self.song_list[0]]["album_art"])
@@ -390,6 +391,7 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 os.mkdir(f"./playlists/{playlist_name}")
                 metadata["tracks"] = {}
 
+            DEFAULT_ALBUM_ART = "http://wiki.theplaz.com/w/images/Windows_Media_Player_12_Default_Album_Art.png"
             for index, item in enumerate(playlist_tracks):
                 artist_text = ""
                 for artist in item["track"]["artists"]:
@@ -399,8 +401,14 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                 if len(metadata) != 1:
                     if f"{artist_text} - {item['track']['name']}" in metadata:
                         continue
-                #               track name            artist(s)          spotify link                               album image url                   track number
-                songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], item["track"]["album"]["images"][0]["url"], index])
+
+                album_art_link = ""
+                if len(item["track"]["album"]["images"]) > 0:
+                    album_art_link = item["track"]["album"]["images"][0]["url"]
+                else:
+                    album_art_link = DEFAULT_ALBUM_ART
+                #               track name            artist(s)          spotify link                      album image url   track number
+                songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], album_art_link, index])
                 # Track ordering will likely break if playlist order is changed and then updated. Not sure how important that is...
 
             if len(songs) == 0:
