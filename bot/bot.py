@@ -61,7 +61,8 @@ class Player:
 
             try:
                 async with timeout(300):
-                    source = await self.queue.get()
+                    path = await self.queue.get()
+                    source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(path))
             except asyncio.TimeoutError:
                 # TODO: implement timeout disconnect
                 pass
@@ -253,8 +254,7 @@ class VoiceCog(commands.GroupCog, name="voice"):
             paths = []
             for song in song_list:
                 if song not in [".spotdl-cache", "failed_songs.txt", "metadata.json"]:
-                    source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(f"./playlists/{target}/{song}"))
-                    await player.queue.put(source)
+                    await player.queue.put(f"./playlists/{target}/{song}")
                     paths.append(f"./playlists/{target}/{song}")
 
                     index = len(song) - 1
@@ -355,8 +355,8 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
             # TODO: sanitize playlist name to make sure
             # directory can be successfully created
+            # TODO: handle prior failed downloads
             if(os.path.exists(f"./playlists/{playlist_name}")):
-                # TODO: check link for updated playlist info
                 # Note that two playlists could have the same name,
                 # so we should confirm that the playlists have the
                 # same content/UUID before updating the downloads
