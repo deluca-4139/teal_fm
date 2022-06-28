@@ -393,23 +393,31 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
             DEFAULT_ALBUM_ART = "http://wiki.theplaz.com/w/images/Windows_Media_Player_12_Default_Album_Art.png"
             for index, item in enumerate(playlist_tracks):
-                artist_text = ""
-                for artist in item["track"]["artists"]:
-                    artist_text += artist["name"] + ", "
-                artist_text = artist_text[:-2]
+                try:
+                    artist_text = ""
+                    for artist in item["track"]["artists"]:
+                        artist_text += artist["name"] + ", "
+                    artist_text = artist_text[:-2]
 
-                if len(metadata) != 1:
-                    if f"{artist_text} - {item['track']['name']}" in metadata:
-                        continue
+                    if len(metadata) != 1:
+                        if f"{artist_text} - {item['track']['name']}" in metadata:
+                            continue
 
-                album_art_link = ""
-                if len(item["track"]["album"]["images"]) > 0:
-                    album_art_link = item["track"]["album"]["images"][0]["url"]
-                else:
-                    album_art_link = DEFAULT_ALBUM_ART
-                #               track name            artist(s)          spotify link                      album image url   track number
-                songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], album_art_link, index])
-                # Track ordering will likely break if playlist order is changed and then updated. Not sure how important that is...
+                    album_art_link = ""
+                    if len(item["track"]["album"]["images"]) > 0:
+                        album_art_link = item["track"]["album"]["images"][0]["url"]
+                    else:
+                        album_art_link = DEFAULT_ALBUM_ART
+                    #               track name            artist(s)          spotify link                      album image url   track number
+                    songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], album_art_link, index])
+                    # Track ordering will likely break if playlist order is changed and then updated. Not sure how important that is...
+                    # TODO: could just update metadata of songs that have a pre-existing download to fix the above problem
+                    print(index)
+                except Exception as e:
+                    # Needed to make sure all songs in playlist
+                    # can be accessed, skipping over those that
+                    # might be missing required information
+                    pass
 
             if len(songs) == 0:
                 return await interaction.edit_original_message(content="Playlist is up to date!")
@@ -467,14 +475,11 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
 
                     output_message = await output_message.edit(content=updated_msg)
 
-            self.write_output_files(playlist_name, metadata, failed_songs_output)
-            await interaction.channel.send(f"Done! Downloaded {len(songs) - failed_songs_count} songs. {(f'{failed_songs_count} songs failed to be downloaded.') if failed_songs_count != 0 else ''}")
-
             # TODO: should probably do this after each
             # failed download so that in the event of a crash,
             # the information can still be retrieved
-            if failed_songs_count != 0:
-                await interaction.channel.send("Some songs were unable to be downloaded. Please check error logs for more information.")
+            self.write_output_files(playlist_name, metadata, failed_songs_output)
+            await interaction.channel.send(f"Done! Downloaded {len(songs) - failed_songs_count} songs. {(f'{failed_songs_count} songs failed to be downloaded. Please check error logs for more information.') if failed_songs_count != 0 else ''}")
 
             update_playlist_dirs()
 
