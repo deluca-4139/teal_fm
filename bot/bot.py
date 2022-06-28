@@ -412,7 +412,6 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     songs.append([item["track"]["name"], artist_text, item["track"]["external_urls"]["spotify"], album_art_link, index])
                     # Track ordering will likely break if playlist order is changed and then updated. Not sure how important that is...
                     # TODO: could just update metadata of songs that have a pre-existing download to fix the above problem
-                    print(index)
                 except Exception as e:
                     # Needed to make sure all songs in playlist
                     # can be accessed, skipping over those that
