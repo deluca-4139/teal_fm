@@ -98,7 +98,10 @@ class Player:
                 self.song_list.append(last_played)
                 self.song_paths.append(last_path)
                 await self.queue.put(discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(last_path)))
-            await self.now_playing.edit(content="", embed=None) # Embed might not update properly if we don't clear it first
+            try:
+                await self.now_playing.edit(content="", embed=None) # Embed might not update properly if we don't clear it first
+            except discord.errors.NotFound:
+                pass
 
             # TODO: fix? maybe unnecessary?
             try:
