@@ -190,10 +190,7 @@ class PlayerButtons(discord.ui.View):
                 await cog.players[interaction.guild.id].queue.get()
             del cog.players[interaction.guild.id]
 
-            for child in self.children:
-                child.disabled = True
-
-        return await interaction.response.edit_message(view=self)
+        return await interaction.message.delete()
 
 class VoiceCog(commands.GroupCog, name="voice"):
     def __init__(self, bot: commands.Bot) -> None:
@@ -257,6 +254,10 @@ class VoiceCog(commands.GroupCog, name="voice"):
             if shuffle:
                 random.shuffle(song_list)
 
+            # TODO: clear queue before adding songs
+            # so that if the player is playing when
+            # play is invoked again, it doesn't just
+            # add the songs at the end of the queue
             paths = []
             for song in song_list:
                 if song not in [".spotdl-cache", "failed_songs.txt", "metadata.json"]:
