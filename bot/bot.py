@@ -70,10 +70,15 @@ class Player:
             source.volume = self.volume
 
             playing_embed = discord.Embed(title=f"Now Playing ~ {self.playlist_name}", description=self.song_list[0])
-            # TODO: fix KeyError
-            playing_embed.add_field(name="Link:", value=f"[Spotify]({self.metadata[self.song_list[0]]['url']})")
-            playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
-            playing_embed.set_image(url=self.metadata[self.song_list[0]]["album_art"])
+            # TODO: log failing song and look into
+            #       why those songs are failing
+            try:
+                playing_embed.add_field(name="Link:", value=f"[Spotify]({self.metadata[self.song_list[0]]['url']})")
+                playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
+                playing_embed.set_image(url=self.metadata[self.song_list[0]]["album_art"])
+            except KeyError as e:
+                user = await self.guild.fetch_member(99709623614849024)
+                await user.send(content=f"`KeyError` occured while playing playlist *{self.playlist_name}*. Attempted song: '{self.song_list[0]}'")
 
             # TODO: the view might time out if the song
             # that's playing is longer than 15 minutes.
