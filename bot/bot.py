@@ -85,7 +85,7 @@ class Player:
             # Will need to figure out how to pass
             # timeout=None into the view when creating
             if self.now_playing is None:
-                self.now_playing = await self.ctx.channel.send(content="", embed=playing_embed, view=PlayerButtons(self.bot))
+                self.now_playing = await self.guild.voice_client.channel.send(content="", embed=playing_embed, view=PlayerButtons(self.bot))
             else:
                 await self.now_playing.edit(content="", embed=playing_embed, view=PlayerButtons(self.bot))
 
@@ -457,6 +457,9 @@ class PlaylistCog(commands.GroupCog, name="playlist"):
                     for line in text_array:
                         updated_msg += line + "\n"
 
+                    # TODO: need to sanitize the song names/artists,
+                    # as sometimes they might contain special characters
+                    # that are not valid in file names and cause KeyErrors
                     metadata[songs[index][1] + " - " + songs[index][0]] = {"album_art": songs[index][3], "url": songs[index][2], "download_succeeded": True} # Probably would be best to use a UUID for this, but it should work for now
                     metadata["tracks"][songs[index][4]] = songs[index][1] + " - " + songs[index][0]
                     output_message = await output_message.edit(content=updated_msg)
