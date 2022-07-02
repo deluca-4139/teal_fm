@@ -1,12 +1,11 @@
 import discord
 from discord import app_commands
-from discord.app_commands import Choice
 from discord.ext import commands
 
 import spotipy
 from spotipy import SpotifyClientCredentials
 
-import asyncio, subprocess, os, random, json
+import asyncio, subprocess, os, random, json, datetime
 from async_timeout import timeout
 from typing import List
 
@@ -19,6 +18,58 @@ client_creds = SpotifyClientCredentials(client_id=env[1], client_secret=env[2])
 spotify_client = spotipy.Spotify(client_credentials_manager=client_creds)
 
 playlist_dirs = []
+
+schedule = {
+    # Monday
+    0: {
+        0: "The Pit",
+        1: "The Pit",
+        2: "The Pit",
+        3: "The Pit"
+    },
+    # Tuesday
+    1: {
+        0: "The Overcast",
+        1: "The Artifact",
+        2: "The Overcast",
+        3: "The Artifact"
+    },
+    # Wednesday
+    2: {
+        0: "The Jungle",
+        1: "The Bleed",
+        2: "The Jungle",
+        3: "The Bleed"
+    },
+    # Thursday
+    3: {
+        0: "TBD",
+        1: "The Outfit",
+        2: "TBD",
+        3: "The Outfit"
+    },
+    # Friday
+    4: {
+        0: "The Clothing Store",
+        1: "The Kick",
+        2: "The Clothing Store",
+        3: "The Kick"
+    },
+    # Saturday
+    5: {
+        0: "The Warp",
+        1: "The Sand",
+        2: "The East",
+        3: "The Smoke"
+    },
+    # Sunday
+    6: {
+        0: "The Class",
+        1: "The Class",
+        2: "The Class",
+        3: "The Class"
+    }
+}
 
 def update_playlist_dirs():
     if os.path.exists("./playlists"):
@@ -50,8 +101,63 @@ class Player:
 
         self.metadata = {}
 
+        self.dates = []
+        self.is_scheduled = True
+
         # This will likely break if you switch to 3.10 in the future
         bot.loop.create_task(self.player_loop())
+
+    async def clear_queue(self):
+        # We need to confirm this value is false,
+        # otherwise the queue will never be empty
+        self.endless = False
+
+        while not self.queue.empty():
+            await self.queue.get()
+
+        self.song_list = []
+    
+    async def start_playlist(self, target: str, interaction: discord.Interaction, shuffle: bool, endless: bool):
+        self.ctx = interaction
+        self.endless = endless
+        await self.clear_queue()
+
+        # TODO: fix for playlist order
+        song_list = os.listdir(f"./playlists/{target}")
+        if shuffle:
+            random.shuffle(song_list)
+
+        paths = []
+        for song in song_list:
+            if song not in [".spotdl-cache", "failed_songs.txt", "metadata.json"]:
+                await self.queue.put(f"./playlists/{target}/{song}")
+                paths.append(f"./playlists/{target}/{song}")
+
+                index = len(song) - 1
+                while song[index] != '.':
+                    index -= 1
+                self.song_list.append(song[0:index])
+        self.song_paths = paths
+        self.playlist_name = target
+
+        metadata_file = open(f"./playlists/{target}/metadata.json", "r")
+        self.metadata = json.load(metadata_file)
+        metadata_file.close()
+    
+    async def check_schedule(self, override: bool = False):
+        if (datetime.date.today() not in self.dates and datetime.datetime.now().hour == 0) or override:
+            self.dates.append(datetime.date.today())
+            await self.clear_queue()
+
+            weekday = datetime.datetime.now().weekday()
+            date = datetime.date.today().day
+            week_num = 0
+            while date > 7:
+                date -= 7
+                week_num += 1
+            
+            playlist = schedule[weekday][week_num]
+            return await self.start_playlist(target=playlist, interaction=self.ctx, shuffle=True, endless=True)
 
     async def player_loop(self):
         await self.bot.wait_until_ready()
@@ -92,8 +198,12 @@ class Player:
             self.guild.voice_client.play(source, after=lambda _: self.bot.loop.call_soon_threadsafe(self.next.set))
             await self.next.wait()
 
-            last_played = self.song_list.pop(0)
+            try:
+                last_played = self.song_list.pop(0)
+            except IndexError:
+                pass
             last_path = self.song_paths.pop(0)
+
             if self.endless:
                 self.song_list.append(last_played)
                 self.song_paths.append(last_path)
@@ -103,11 +213,8 @@ class Player:
             except discord.errors.NotFound:
                 pass
 
-            # TODO: fix? maybe unnecessary?
-            try:
-                source.cleanup()
-            except ValueError:
-                pass
+            if self.is_scheduled:
+                await self.check_schedule()
 
 class PlayerButtons(discord.ui.View):
     def __init__(self, bot):
@@ -184,18 +291,13 @@ class PlayerButtons(discord.ui.View):
         if current_voice is not None:
             current_voice.stop()
 
-            cog = self.bot.get_cog("voice")
-            # We need to confirm this value is false,
-            # otherwise the queue will never be empty
-            cog.players[interaction.guild.id].endless = False
-
-            while not cog.players[interaction.guild.id].queue.empty():
-                await cog.players[interaction.guild.id].queue.get()
+            cog = self.bot.get_cog("fm")
+            await cog.players[interaction.guild.id].clear_queue()
             del cog.players[interaction.guild.id]
 
         return await interaction.message.delete()
 
-class VoiceCog(commands.GroupCog, name="voice"):
+class VoiceCog(commands.GroupCog, name="fm"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.players = {}
@@ -219,19 +321,19 @@ class VoiceCog(commands.GroupCog, name="voice"):
                 try:
                     channel = interaction.user.voice.channel
                 except AttributeError:
-                    return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.")
+                    return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.", ephemeral=True)
             else:
-                return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.")
+                return await interaction.response.send_message("No channel found. Please join a voice channel or specify a valid one.", ephemeral=True)
 
         if interaction.guild.voice_client in self.bot.voice_clients:
             if interaction.guild.voice_client.channel == channel:
                 return
             else:
                 await interaction.guild.voice_client.move_to(channel)
-                return await interaction.response.send_message(f"Moved to channel {channel}!")
+                return await interaction.response.send_message(f"Moved to channel {channel}!", ephemeral=True)
         else:
             await channel.connect()
-            return await interaction.response.send_message(f"Joined channel {channel}!")
+            return await interaction.response.send_message(f"Joined channel {channel}!", ephemeral=True)
 
     @app_commands.command(name="leave", description="Leave the current voice channel.")
     async def leave(self, interaction: discord.Interaction):
@@ -240,43 +342,27 @@ class VoiceCog(commands.GroupCog, name="voice"):
         await interaction.guild.voice_client.disconnect()
         return await interaction.response.send_message("Left voice!")
 
+    @app_commands.command(name="begin", description="Start playing scheduled playlists.")
+    async def begin(self, interaction: discord.Interaction):
+        if not interaction.guild.voice_client:
+            # TODO: maybe just have the bot join the voice channel?
+            return await interaction.response.send_message("I am not currently connected to a voice channel!", ephemeral=True)
+        else:
+            player = self.get_player(interaction)
+            await player.check_schedule(override=True)
+            return await interaction.response.send_message("TeaL FM has started.", ephemeral=True)
+    
     @app_commands.command(name="play", description="Play a downloaded playlist.")
     @app_commands.describe(target="the playlist you want to play", shuffle="whether or not to shuffle the playlist", endless="whether you want the playlist to loop")
     async def play(self, interaction: discord.Interaction, target: str, shuffle: bool, endless: bool = False):
         if not interaction.guild.voice_client:
             # TODO: maybe just have the bot join the voice channel?
-            return await interaction.response.send_message("I am not currently connected to a voice channel!")
+            return await interaction.response.send_message("I am not currently connected to a voice channel!", ephemeral=True)
 
         try:
             player = self.get_player(interaction)
-            player.ctx = interaction
-            player.endless = endless
-
-            # TODO: fix for playlist order
-            song_list = os.listdir(f"./playlists/{target}")
-            if shuffle:
-                random.shuffle(song_list)
-
-            # TODO: clear queue before adding songs
-            # so that if the player is playing when
-            # play is invoked again, it doesn't just
-            # add the songs at the end of the queue
-            paths = []
-            for song in song_list:
-                if song not in [".spotdl-cache", "failed_songs.txt", "metadata.json"]:
-                    await player.queue.put(f"./playlists/{target}/{song}")
-                    paths.append(f"./playlists/{target}/{song}")
-
-                    index = len(song) - 1
-                    while song[index] != '.':
-                        index -= 1
-                    player.song_list.append(song[0:index])
-            player.song_paths = paths
-            player.playlist_name = target
-
-            metadata_file = open(f"./playlists/{target}/metadata.json", "r")
-            player.metadata = json.load(metadata_file)
-            metadata_file.close()
+            player.is_scheduled = False
+            await player.start_playlist(target, interaction, shuffle, endless)
 
             return await interaction.response.send_message("Started playing!", ephemeral=True)
         except Exception as e:
