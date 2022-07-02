@@ -25,49 +25,56 @@ schedule = {
         0: "The Pit",
         1: "The Pit",
         2: "The Pit",
-        3: "The Pit"
+        3: "The Pit",
+        4: "The Class"
     },
     # Tuesday
     1: {
         0: "The Overcast",
         1: "The Artifact",
         2: "The Overcast",
-        3: "The Artifact"
+        3: "The Artifact",
+        4: "The Class"
     },
     # Wednesday
     2: {
         0: "The Jungle",
         1: "The Bleed",
         2: "The Jungle",
-        3: "The Bleed"
+        3: "The Bleed",
+        4: "The Class"
     },
     # Thursday
     3: {
         0: "TBD",
         1: "The Outfit",
         2: "TBD",
-        3: "The Outfit"
+        3: "The Outfit",
+        4: "The Class"
     },
     # Friday
     4: {
         0: "The Clothing Store",
         1: "The Kick",
         2: "The Clothing Store",
-        3: "The Kick"
+        3: "The Kick",
+        4: "The Class"
     },
     # Saturday
     5: {
         0: "The Warp",
         1: "The Sand",
         2: "The East",
-        3: "The Smoke"
+        3: "The Smoke",
+        4: "The Class"
     },
     # Sunday
     6: {
-        0: "The Class",
-        1: "The Class",
-        2: "The Class",
-        3: "The Class"
+        0: "The Garden",
+        1: "The Garden",
+        2: "The Garden",
+        3: "The Garden",
+        4: "The Class"
     }
 }
 
