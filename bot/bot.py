@@ -46,9 +46,9 @@ schedule = {
     },
     # Thursday
     3: {
-        0: "TBD",
+        0: "The Evening",
         1: "The Outfit",
-        2: "TBD",
+        2: "The Evening",
         3: "The Outfit",
         4: "The Class"
     },
@@ -108,7 +108,7 @@ class Player:
 
         self.metadata = {}
 
-        self.dates = []
+        self.today = None
         self.is_scheduled = True
 
         # This will likely break if you switch to 3.10 in the future
@@ -152,12 +152,12 @@ class Player:
         metadata_file.close()
     
     async def check_schedule(self, override: bool = False):
-        if (datetime.date.today() not in self.dates and datetime.datetime.now().hour == 0) or override:
-            self.dates.append(datetime.date.today())
+        if (datetime.date.now().day != self.today.day and datetime.datetime.now().hour == 0) or override:
+            self.today = datetime.date.now()
             await self.clear_queue()
 
             weekday = datetime.datetime.now().weekday()
-            date = datetime.date.today().day
+            date = datetime.date.now().day
             week_num = 0
             while date > 7:
                 date -= 7
