@@ -166,6 +166,27 @@ class Player:
             playlist = schedule[weekday][week_num]
             return await self.start_playlist(target=playlist, interaction=self.ctx, shuffle=True, endless=True)
 
+    def find_close_keys(self, orig: str):
+        keys = []
+
+        orig_list = list(orig)
+        max_chars = 1
+        while len(keys) == 0:
+            for song in self.metadata:
+                if abs(len(orig) - len(song) > max_chars):
+                    continue
+                if song != "tracks":
+                    test_list = list(song)
+                    for char in orig_list:
+                        if char in test_list:
+                            test_list.remove(char)
+                    if len(test_list) <= max_chars:
+                        keys.append([song, len(test_list)])
+            max_chars += 1
+
+        return keys
+            
+    
     async def player_loop(self):
         await self.bot.wait_until_ready()
 
@@ -183,15 +204,23 @@ class Player:
             source.volume = self.volume
 
             playing_embed = discord.Embed(title=f"Now Playing ~ {self.playlist_name}", description=self.song_list[0])
-            # TODO: log failing song and look into
-            #       why those songs are failing
-            try:
-                playing_embed.add_field(name="Link:", value=f"[Spotify]({self.metadata[self.song_list[0]]['url']})")
-                playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
-                playing_embed.set_image(url=self.metadata[self.song_list[0]]["album_art"])
-            except KeyError as e:
-                user = await self.guild.fetch_member(99709623614849024)
-                await user.send(content=f"`KeyError` occured while playing playlist *{self.playlist_name}*. Attempted song: '{self.song_list[0]}'")
+            song = None
+            if self.song_list[0] in self.metadata:
+                song = self.metadata[self.song_list[0]]
+            else: 
+                possible_keys = self.find_close_keys(self.song_list[0])
+                if len(possible_keys) == 1:
+                    song = self.metadata[possible_keys[0][0]]
+                else:
+                    closest = possible_keys[0]
+                    for key in possible_keys: 
+                        if key[1] < closest[1]:
+                            closest = key 
+                    song = self.metadata[closest[0]] 
+
+            playing_embed.add_field(name="Link:", value=f"[Spotify]({song['url']})")
+            playing_embed.set_footer(text="Up next: {}".format(self.song_list[1] if (len(self.song_list) > 1) else "nothing"))
+            playing_embed.set_image(url=song["album_art"])
 
             # TODO: the view might time out if the song
             # that's playing is longer than 15 minutes.
@@ -347,7 +376,7 @@ class VoiceCog(commands.GroupCog, name="fm"):
         # TODO: cleanup before leaving if bot is currently playing
         # TODO: check if bot is in voice before DCing
         await interaction.guild.voice_client.disconnect()
-        return await interaction.response.send_message("Left voice!")
+        return await interaction.response.send_message("Left voice!", ephemeral=True)
 
     @app_commands.command(name="begin", description="Start playing scheduled playlists.")
     async def begin(self, interaction: discord.Interaction):
