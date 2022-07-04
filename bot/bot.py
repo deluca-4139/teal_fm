@@ -108,7 +108,7 @@ class Player:
 
         self.metadata = {}
 
-        self.today = None
+        self.today = datetime.datetime.now()
         self.is_scheduled = True
 
         # This will likely break if you switch to 3.10 in the future
@@ -152,12 +152,12 @@ class Player:
         metadata_file.close()
     
     async def check_schedule(self, override: bool = False):
-        if (datetime.date.now().day != self.today.day and datetime.datetime.now().hour == 0) or override:
-            self.today = datetime.date.now()
+        if (datetime.datetime.now().day != self.today.day and datetime.datetime.now().hour == 0) or override:
+            self.today = datetime.datetime.now()
             await self.clear_queue()
 
             weekday = datetime.datetime.now().weekday()
-            date = datetime.date.now().day
+            date = datetime.datetime.now().day
             week_num = 0
             while date > 7:
                 date -= 7
