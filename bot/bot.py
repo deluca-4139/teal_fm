@@ -10,7 +10,7 @@ from async_timeout import timeout
 from typing import List
 
 env = []
-with open("env", "r") as infile:
+with open("env_fm", "r") as infile:
     for line in infile:
         env.append(str(line).strip())
 
@@ -184,8 +184,7 @@ class Player:
                         keys.append([song, len(test_list)])
             max_chars += 1
 
-        return keys
-            
+        return keys     
     
     async def player_loop(self):
         await self.bot.wait_until_ready()
@@ -374,9 +373,11 @@ class VoiceCog(commands.GroupCog, name="fm"):
     @app_commands.command(name="leave", description="Leave the current voice channel.")
     async def leave(self, interaction: discord.Interaction):
         # TODO: cleanup before leaving if bot is currently playing
-        # TODO: check if bot is in voice before DCing
-        await interaction.guild.voice_client.disconnect()
-        return await interaction.response.send_message("Left voice!", ephemeral=True)
+        if interaction.guild.voice_client in self.bot.voice_clients:
+            await interaction.guild.voice_client.disconnect()
+            return await interaction.response.send_message("Left voice!", ephemeral=True)
+        else:
+            return await interaction.response.send_message("I am not currently in a voice channel!", ephemeral=True)
 
     @app_commands.command(name="begin", description="Start playing scheduled playlists.")
     async def begin(self, interaction: discord.Interaction):
