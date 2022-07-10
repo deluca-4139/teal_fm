@@ -185,6 +185,28 @@ class Player:
             max_chars += 1
 
         return keys     
+
+    def update_xp(self):
+        voice_channel = None
+        for client in self.bot.voice_clients:
+            if client.guild.id == self.guild.id:
+                voice_channel = client.channel
+        
+        users = {}
+        if os.path.exists('./xp'):
+            with open('./xp', 'r') as xpfile:
+                users = json.load(xpfile)
+        
+        for user in voice_channel.voice_states:
+            user = str(user)
+            if user != str(self.bot.user.id):
+                if user in users: 
+                    users[user] = users[user] + 1
+                else:
+                    users[user] = 1 
+
+        with open('./xp', 'w') as xpfile:
+            json.dump(users, xpfile)
     
     async def player_loop(self):
         await self.bot.wait_until_ready()
@@ -247,6 +269,8 @@ class Player:
                 await self.now_playing.edit(content="", embed=None) # Embed might not update properly if we don't clear it first
             except discord.errors.NotFound:
                 pass
+
+            self.update_xp()
 
             if self.is_scheduled:
                 await self.check_schedule()
@@ -414,6 +438,20 @@ class VoiceCog(commands.GroupCog, name="fm"):
         return [
             app_commands.Choice(name=dir, value=dir) for dir in playlist_dirs if current.lower() in dir.lower()
         ]
+
+    @app_commands.command(name="xp", description="Check your XP.")
+    async def xp(self, interaction: discord.Interaction):
+        users = {}
+        if os.path.exists('./xp'):
+            with open('./xp', 'r') as xpfile:
+                users = json.load(xpfile)
+        
+        if users == {}:
+            return await interaction.response.send_message("I do not have an XP file created yet.")
+        if str(interaction.user.id) in users: 
+            return await interaction.response.send_message(f"{interaction.user.mention} has listened to {users[str(interaction.user.id)]} songs.")
+        else:
+            return await interaction.response.send_message(f"{interaction.user.mention} hasn't listened to any songs yet.")
 
 class PlaylistCog(commands.GroupCog, name="playlist"):
     def __init__(self, bot: commands.Bot) -> None:
